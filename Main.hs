@@ -121,7 +121,7 @@ initProject (Git repo) = do
     
 parseProject :: Repo -> FilePath -> Cis Project
 parseProject r f = do
-    maybeProject <- liftIO $ decodeFile $ f <> "/.civ.yml" :: Cis (Maybe Project)
+    maybeProject <- liftIO $ decodeFile $ f <> "/.cis.yml" :: Cis (Maybe Project)
     newProject <- maybe (throwError "cant parse project file") mergeProject maybeProject
     return newProject
     where
