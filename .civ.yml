@@ -1,0 +1,8 @@
+notification:
+    status: true
+    email: chemist@nigma.ru
+before_install:
+    - sh travis-apt-install
+    - cabal install --only-dependencies --force-reinstall
+after:
+    - cabal configure && cabal build
