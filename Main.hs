@@ -14,6 +14,7 @@ import Data.Yaml
 import System.IO.Temp
 import System.Directory
 import Data.Text (pack, unpack)
+import Control.Monad.Writer
 import Prelude hiding (putStr)
 
 path' = "/home/chemist/develop/haskell/radio/"
@@ -22,16 +23,28 @@ configure = "cabal configure"
 build = "cabal build"
 install = "cabal install"
 
+data Log = Log 
+  { stdout :: ByteString
+  , stderr :: ByteString
+  } deriving (Show, Eq)
+  
+instance Monoid Log where
+    mempty = Log mempty mempty
+    mappend (Log x y) (Log x1 y1) = Log (x <> x1) (y <> y1)
+
+type Cis = ErrorT String (WriterT Log IO)
+    
+runCis :: Cis a -> IO (Either String a, Log)
+runCis = runWriterT . runErrorT
+
 type Command = String
 
 data Step = Step 
   { command :: Command
-  , output :: ByteString
-  , error  :: ByteString
   } deriving (Show, Eq)
   
 instance FromJSON Step where
-    parseJSON (String x) = pure $ Step (unpack x) "" ""
+    parseJSON (String x) = pure $ Step (unpack x) 
     
 instance ToJSON Step where
     toJSON x = String ((pack $ command x))
@@ -66,16 +79,17 @@ instance FromJSON Project where
 
 instance Error Step 
 
-runStep :: Command -> ErrorT Step IO Step
-runStep comm = do
+runStep :: Step -> Cis ()
+runStep (Step comm) = do
     (_, stdout, stderr, handle) <- liftIO $ runInteractiveCommand comm
     out <- liftIO $ S.toList stdout
     err <- liftIO $ S.toList stderr
     exitCode <- liftIO $ waitForProcess handle
-    let st = Step comm (msg out) (msg err)
+    tell $ Log (msg out) (msg err)
+    let st = Step comm 
     case exitCode of
-         ExitSuccess -> return st
-         _ ->           throwError st
+         ExitSuccess -> return ()
+         _ ->           throwError $ "error in " <> comm
     
 
 msg :: [ByteString] -> ByteString
@@ -85,18 +99,14 @@ msg x = foldl1 (<>) x
 main :: IO ()
 main = do
     current <- getCurrentDirectory 
-    setCurrentDirectory path'
-    r <- runErrorT $ mapM runStep [configure, build]
+    r <- runCis $ do
+        pr <- initProject (Git "git@github.com:chemist/siberia.git")
+        liftIO $ setCurrentDirectory $ directory pr
+        mapM runStep $ task pr
     print r
     setCurrentDirectory current
-    reloadApp
     
-   
-
-reloadApp :: IO ()
-reloadApp = print "reload here"
-    
-initProject :: Repo -> ErrorT String IO Project
+initProject :: Repo -> Cis Project
 initProject (Git repo) = do
     current <- liftIO $ getCurrentDirectory
     tmp <- liftIO $ createTempDirectory current "gt"
@@ -105,19 +115,17 @@ initProject (Git repo) = do
     out <- liftIO $ S.toList stdout
     err <- liftIO $ S.toList stderr
     exitCode <- liftIO $ waitForProcess handle
-    liftIO $ print exitCode
-    liftIO $ print out
-    liftIO $ print err
+    tell $ Log (msg out) (msg err)
     when (exitCode /= ExitSuccess) $ throwError $ "cant do git clone " <> repo
-    return $ Project [] [] (Mail "" False) (Git repo) tmp
+    parseProject (Git repo) tmp
     
-parseProject :: Project -> ErrorT String IO Project
-parseProject pr = do
-    maybeProject <- liftIO $ decodeFile $ (directory pr) <> "/.civ.yml" :: ErrorT String IO (Maybe Project)
-    newProject <- maybe (throwError "cant parse project file") (nextStep pr) maybeProject
+parseProject :: Repo -> FilePath -> Cis Project
+parseProject r f = do
+    maybeProject <- liftIO $ decodeFile $ f <> "/.civ.yml" :: Cis (Maybe Project)
+    newProject <- maybe (throwError "cant parse project file") mergeProject maybeProject
     return newProject
     where
-    nextStep pr pr' = return $ Project (task pr') (launch pr') (notify pr') (cvs pr) (directory pr)
+    mergeProject pr = return $ Project (task pr) (launch pr) (notify pr) r f
     
                                                            
     
