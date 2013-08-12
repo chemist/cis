@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 module Data where
 
 import Data.Yaml
@@ -8,6 +9,8 @@ import Data.ByteString (putStr, ByteString)
 import Control.Monad.Writer
 import Control.Applicative
 import Data.Text (pack, unpack)
+import Data.Typeable(Typeable)
+import           Data.SafeCopy (base, deriveSafeCopy)
 
 
 data Log = Log 
@@ -23,7 +26,7 @@ type Cis = ErrorT String (WriterT Log IO)
 
 type Command = String
 
-newtype Step = Step Command deriving (Show, Eq)
+newtype Step = Step Command deriving (Show, Eq, Ord)
  
 instance FromJSON Step where
     parseJSON (String x) = pure $ Step (unpack x) 
@@ -34,7 +37,7 @@ instance ToJSON Step where
 type Task = [Step]
 type Version = String
 
-data Msg = Mail String Bool deriving (Show, Eq)
+data Msg = Mail String Bool deriving (Show, Eq, Ord)
 
 instance FromJSON Msg where
     parseJSON (Object x) = Mail <$> x .: "email" <*> x .: "status"
@@ -43,8 +46,11 @@ instance ToJSON Msg where
     toJSON (Mail s b) = object [ "email" .= s, "status" .= b ]
 
 
-data Repo = Git String 
-          | Nil deriving (Show, Eq)
+data Repo = Git 
+  { repo :: String 
+  , name :: String
+  }
+          | Nil deriving (Show, Eq, Ord)
 
 data Project = Project
  { task    :: Task
@@ -52,7 +58,7 @@ data Project = Project
  , notify  :: Msg
  , cvs     :: Repo
  , directory :: String
- } deriving (Show, Eq)
+ } deriving (Show, Eq, Ord, Typeable)
  
 instance ToJSON Project where
     toJSON x = object [ "before_install" .= (task x), "after" .= (launch x), "notification" .= (notify x) ]
