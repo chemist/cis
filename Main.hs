@@ -39,15 +39,13 @@ runCis = runWriterT . runErrorT
 
 type Command = String
 
-data Step = Step 
-  { command :: Command
-  } deriving (Show, Eq)
+newtype Step = Step Command deriving (Show, Eq)
   
 instance FromJSON Step where
     parseJSON (String x) = pure $ Step (unpack x) 
     
 instance ToJSON Step where
-    toJSON x = String ((pack $ command x))
+    toJSON (Step x) = String ((pack x))
   
 type Task = [Step]
 type Version = String
@@ -100,7 +98,7 @@ main :: IO ()
 main = do
     current <- getCurrentDirectory 
     r <- runCis $ do
-        pr <- initProject (Git "git@github.com:chemist/siberia.git")
+        pr <- initProject (Git "git@github.com:chemist/cis.git")
         liftIO $ setCurrentDirectory $ directory pr
         mapM runStep $ task pr
     print r
