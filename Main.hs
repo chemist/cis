@@ -73,7 +73,7 @@ instance ToJSON Project where
     toJSON x = object [ "before_install" .= (task x), "after" .= (launch x), "notification" .= (notify x) ]
     
 instance FromJSON Project where
-    parseJSON (Object x) = Project <$> x .: "before_install" <*> x .: "after" <*> x .: "notification" <*> pure Nil <*> pure ""
+    parseJSON (Object x) = Project <$> (x .: "before_install" <|> pure []) <*> x .: "after" <*> x .: "notification" <*> pure Nil <*> pure ""
 
 instance Error Step 
 
@@ -97,11 +97,14 @@ msg x = foldl1 (<>) x
 main :: IO ()
 main = do
     current <- getCurrentDirectory 
-    r <- runCis $ do
+    (r, log) <- runCis $ do
         pr <- initProject (Git "git@github.com:chemist/cis.git")
+        liftIO $ print pr
         liftIO $ setCurrentDirectory $ directory pr
         mapM runStep $ task pr
+        mapM runStep $ launch pr
     print r
+    putStr $ stdout log
     setCurrentDirectory current
     
 initProject :: Repo -> Cis Project
